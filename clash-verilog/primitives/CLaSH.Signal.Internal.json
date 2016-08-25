@@ -1,19 +1,21 @@
 [ { "BlackBox" :
     { "name" : "CLaSH.Signal.Internal.register#"
     , "type" :
-"register# :: SClock clk     -- ARG[0]
-           -> a              -- ARG[1]
-           -> Signal' clk a  -- ARG[2]
-           -> Signal' clk a"
+"register# :: HasCallStack  -- 0
+           => Reset reset domain -- 1
+           -> Clock clk domain -- 2
+           -> a -- 3
+           -> Signal domain a -- 4
+           -> Signal domain a"
     , "templateD" :
 "// register begin
-reg ~SIGD[~GENSYM[dout][0]][2];
+reg ~SIGD[~GENSYM[dout][0]][3];
 
-always @(posedge ~CLK[0] or negedge ~RST[0]) begin : ~GENSYM[~COMPNAME_register][1]
-  if (~ ~RST[0]) begin
-    ~SYM[0] <= ~ARG[1];
+always @(posedge ~ARG[2] or negedge ~ARG[1]) begin : ~GENSYM[~COMPNAME_register][1]
+  if (~ ~ARG[1]) begin
+    ~SYM[0] <= ~ARG[3];
   end else begin
-    ~SYM[0] <= ~ARG[2];
+    ~SYM[0] <= ~ARG[4];
   end
 end
 

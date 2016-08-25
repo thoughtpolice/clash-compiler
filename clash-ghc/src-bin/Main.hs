@@ -184,6 +184,7 @@ main = do
                                     , LangExt.TypeApplications
                                     , LangExt.ScopedTypeVariables
                                     , LangExt.MagicHash
+                                    , LangExt.ImplicitParams
                                     ]
                 dflagsExtra1 = foldl DynFlags.xopt_unset dflagsExtra
                                      [ LangExt.ImplicitPrelude

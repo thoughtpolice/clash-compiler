@@ -1753,12 +1753,12 @@ makeHDL backend optsRef srcs = do
               primDir <- CLaSH.Backend.primDir (backend iw syn)
               primMap <- CLaSH.Primitives.Util.generatePrimMap [primDir,"."]
               forM_ srcs $ \src -> do
-                (bindingsMap,tcm,tupTcm,topEnt,testInpM,expOutM) <- generateBindings primMap src (Just dflags)
+                (bindingsMap,tcm,tupTcm,topEnt,benchM) <- generateBindings primMap src (Just dflags)
                 prepTime <- startTime `deepseq` bindingsMap `deepseq` tcm `deepseq` Clock.getCurrentTime
                 let prepStartDiff = Clock.diffUTCTime prepTime startTime
                 putStrLn $ "Loading dependencies took " ++ show prepStartDiff
                 CLaSH.Driver.generateHDL bindingsMap (Just (backend iw syn)) primMap tcm
-                  tupTcm (ghcTypeToHWType iw) reduceConstant topEnt testInpM expOutM opts' (startTime,prepTime)
+                  tupTcm (ghcTypeToHWType iw) reduceConstant topEnt benchM opts' (startTime,prepTime)
 
 makeVHDL :: IORef CLaSHOpts -> [FilePath] -> InputT GHCi ()
 makeVHDL = makeHDL' (CLaSH.Backend.initBackend :: Int -> HdlSyn -> VHDLState)

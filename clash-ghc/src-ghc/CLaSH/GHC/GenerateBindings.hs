@@ -53,46 +53,38 @@ generateBindings ::
   -> Maybe  (GHC.DynFlags)
   -> IO (BindingMap,HashMap TyConName TyCon,IntMap TyConName
         ,(TmName, Maybe TopEntity) -- topEntity bndr + (maybe) TopEntity annotation
-        ,Maybe TmName              -- testInput bndr
-        ,Maybe TmName)             -- expectedOutput bndr
+        ,Maybe TmName)             -- testbench bndr
 generateBindings primMap modName dflagsM = do
-  (bindings,clsOps,unlocatable,fiEnvs,(topEnt,topEntAnn),testInpM,expOutM) <- loadModules modName dflagsM
+  (bindings,clsOps,unlocatable,fiEnvs,(topEnt,topEntAnn),benchM) <- loadModules modName dflagsM
   let ((bindingsMap,clsVMap),tcMap) = State.runState (mkBindings primMap bindings clsOps unlocatable) emptyGHC2CoreState
       (tcMap',tupTcCache)           = mkTupTyCons tcMap
       tcCache                       = makeAllTyCons tcMap' fiEnvs
       allTcCache                    = tysPrimMap `HashMap.union` tcCache
       clsMap                        = HashMap.map (\(ty,i) -> (ty,GHC.noSrcSpan,mkClassSelector allTcCache ty i)) clsVMap
       allBindings                   = bindingsMap `HashMap.union` clsMap
-      (topEnt',testInpM',expOutM')  = flip State.evalState tcMap' $ do
+      (topEnt',benchM')             = flip State.evalState tcMap' $ do
                                           topEnt'' <- coreToName GHC.varName GHC.varUnique qualfiedNameString topEnt
-                                          testInpM'' <- traverse (coreToName GHC.varName GHC.varUnique qualfiedNameString) testInpM
-                                          expOutM'' <- traverse (coreToName GHC.varName GHC.varUnique qualfiedNameString) expOutM
-                                          return (topEnt'',testInpM'',expOutM'')
-      droppedAndRetypedBindings     = dropAndRetypeBindings allTcCache allBindings topEnt' testInpM' expOutM'
-
-  return (droppedAndRetypedBindings,allTcCache,tupTcCache,(topEnt',topEntAnn),testInpM',expOutM')
+                                          benchM'' <- traverse (coreToName GHC.varName GHC.varUnique qualfiedNameString) benchM
+                                          return (topEnt'',benchM'')
+      droppedAndRetypedBindings     = dropAndRetypeBindings allTcCache allBindings topEnt' benchM'
+  return (droppedAndRetypedBindings,allTcCache,tupTcCache,(topEnt',topEntAnn),benchM')
 
 dropAndRetypeBindings :: HashMap TyConName TyCon
                       -> BindingMap
                       -> TmName        -- ^ topEntity
-                      -> Maybe TmName  -- ^ testInput
-                      -> Maybe TmName  -- ^ expectedOutput
+                      -> Maybe TmName  -- ^ testBench
                       -> BindingMap
 
-dropAndRetypeBindings allTcCache allBindings topEnt testInpM expOutM = oBindings
+dropAndRetypeBindings allTcCache allBindings topEnt benchM = bBindings
   where
     topEntity = do e <- HashMap.lookup topEnt allBindings
                    return (topEnt,e)
-    testInput = do t <- testInpM
+    testBench = do t <- benchM
                    e <- HashMap.lookup t allBindings
                    return (t,e)
-    expectedOut = do t <- expOutM
-                     e <- HashMap.lookup t allBindings
-                     return (t,e)
 
     tBindings = maybe allBindings (dropAndRetype allBindings) topEntity
-    iBindings = maybe tBindings (dropAndRetype tBindings) testInput
-    oBindings = maybe iBindings (dropAndRetype iBindings) expectedOut
+    bBindings = maybe tBindings (dropAndRetype tBindings) testBench
     dropAndRetype d (t,_) = snd (retype allTcCache ([],lambdaDropPrep d t) t)
 
 -- | clean up cast-removal mess

@@ -59,9 +59,7 @@ mkBlackBoxContext resId args = do
     (funs,funDecls) <- mapAccumLM (addFunction tcm) IntMap.empty (zip args [0..])
 
     -- Make context result
-    res   <- case synchronizedClk tcm (unembed $ V.varType resId) of
-                Just clk -> Right . (,clk) . (`N.Identifier` Nothing) <$> mkBasicId (pack $ name2String (V.varName resId))
-                Nothing  -> Left . (`N.Identifier` Nothing)  <$> mkBasicId (pack $ name2String (V.varName resId))
+    res   <- (`N.Identifier` Nothing)  <$> mkBasicId (pack $ name2String (V.varName resId))
     resTy <- unsafeCoreTypeToHWTypeM $(curLoc) (unembed $ V.varType resId)
 
     return ( Context (res,resTy) imps funs
@@ -84,7 +82,6 @@ prepareBlackBox pNm templ bbCtx =
   if verifyBlackBoxContext bbCtx templ
      then instantiateCompName >=>
           setSym >=>
-          setClocks bbCtx >=>
           collectFilePaths bbCtx $ templ
      else do
        (_,sp) <- Lens.use curCompNm
@@ -94,7 +91,7 @@ prepareBlackBox pNm templ bbCtx =
 
 mkArgument :: Identifier -- ^ LHS of the original let-binder
            -> Term
-           -> NetlistMonad ( (SyncExpr,HWType,Bool)
+           -> NetlistMonad ( (Expr,HWType,Bool)
                            , [Declaration]
                            )
 mkArgument bndr e = do
@@ -123,11 +120,7 @@ mkArgument bndr e = do
           (exprN,dcDecls) <- mkDcApplication hwTy (Left bndr) dc (lefts args)
           return ((exprN,hwTy,isConstant e),dcDecls)
         _ -> return ((Identifier "__VOID__" Nothing,hwTy,False),[])
-    return ((addClock tcm ty e',t,l),d)
-  where
-    addClock tcm ty e' = case synchronizedClk tcm ty of
-                           Just clk -> Right (e',clk)
-                           _        -> Left  e'
+    return ((e',t,l),d)
 
 mkPrimitive :: Bool -- ^ Put BlackBox expression in parenthesis
             -> Bool -- ^ Treat BlackBox expression as declaration
@@ -267,13 +260,12 @@ mkFunInput resId e = do
               normalized <- Lens.use bindings
               case HashMap.lookup fun normalized of
                 Just _ -> do
-                  (_,Component compName hidden compInps [compOutp] _) <- preserveVarEnv $ genComponent fun Nothing
-                  let hiddenAssigns = map (\(i,t) -> (i,In,t,Identifier i Nothing)) hidden
-                      inpAssigns    = zipWith (\(i,t) e' -> (i,In,t,e')) compInps [ Identifier (pack ("~ARG[" ++ show x ++ "]")) Nothing | x <- [(0::Int)..] ]
+                  (_,Component compName compInps [compOutp] _) <- preserveVarEnv $ genComponent fun
+                  let inpAssigns    = zipWith (\(i,t) e' -> (i,In,t,e')) compInps [ Identifier (pack ("~ARG[" ++ show x ++ "]")) Nothing | x <- [(0::Int)..] ]
                       outpAssign    = (fst compOutp,Out,snd compOutp,Identifier (pack "~RESULT") Nothing)
                   i <- varCount <<%= (+1)
                   let instLabel     = Text.concat [compName,pack ("_" ++ show i)]
-                      instDecl      = InstDecl compName instLabel (outpAssign:hiddenAssigns ++ inpAssigns)
+                      instDecl      = InstDecl compName instLabel (outpAssign:inpAssigns)
                   return (Right instDecl)
                 Nothing -> error $ $(curLoc) ++ "Cannot make function input for: " ++ showDoc e
             _ -> error $ $(curLoc) ++ "Cannot make function input for: " ++ showDoc e
@@ -281,9 +273,8 @@ mkFunInput resId e = do
     Left (_, Left templ') -> do
       l   <- instantiateCompName templ'
       l'  <- setSym l
-      l'' <- setClocks bbCtx l'
-      l3  <- collectFilePaths bbCtx l''
-      return ((Left l3,bbCtx),dcls)
+      l'' <- collectFilePaths bbCtx l'
+      return ((Left l'',bbCtx),dcls)
     Left (_, Right templ') -> do
       templ'' <- prettyBlackBox templ'
       let ass = Assignment (pack "~RESULT") (Identifier templ'' Nothing)

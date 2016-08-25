@@ -1,8 +1,8 @@
 [ { "BlackBox" :
-    { "name" : "CLaSH.Prelude.Testbench.assert'"
+    { "name" : "CLaSH.Prelude.Testbench.assert#"
     , "type" :
 "assert :: (Eq a,Show a) -- (ARG[0],ARG[1])
-        => SClock t      -- ^ ARG[2]
+        => Clock t       -- ^ ARG[2]
         -> String        -- ^ ARG[3]
         -> Signal' t a   -- ^ Checked value (ARG[4])
         -> Signal' t a   -- ^ Expected value (ARG[5])
@@ -11,7 +11,7 @@
     , "templateD" :
 "// assert begin
 // pragma translate_off
-always @(posedge ~CLK[2] or posedge ~RST[2]) begin
+always @(posedge ~ARG[2]) begin
   if (~ARG[4] !== ~ARG[5]) begin
     $display(\"@%0tns: %s, expected: %b, actual: %b\", $time, ~LIT[3], ~ARG[5], ~ARG[4]);
     $finish;
@@ -20,6 +20,67 @@ end
 // pragma translate_on
 assign ~RESULT = ~ARG[6];
 // assert end"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "CLaSH.Prelude.Testbench.clockGen"
+    , "type" :
+"clockGen :: forall domain nm period .
+            ( KnownSymbol nm  -- LIT[0]
+            , KnownNat period -- LIT[1]
+            , domain ~ 'Domain nm period)
+         => Clock 'Original domain"
+    , "templateD" :
+"// pragma translate_off
+reg ~TYPO ~GENSYM[clk][0];
+localparam ~GENSYM[half_period][1] = (~LIT[1] / 2);
+always begin
+  ~SYM[0] = 0;
+  #3 forever begin
+    ~SYM[0] = ~ ~SYM[0];
+    #~SYM[1];
+    ~SYM[0] = ~ ~SYM[0];
+    #~SYM[1];
+  end
+end
+assign ~RESULT = ~SYM[0];
+// pragma translate_on"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "CLaSH.Prelude.Testbench.asyncResetGen"
+    , "type" :
+"asyncResetGen :: forall domain nm period .
+                 ( KnownSymbol nm  -- LIT[0]
+                 , KnownNat period -- LIT[1]
+                 , domain ~ 'Domain nm period)
+              => Reset 'Asynchronous domain"
+    , "templateD" :
+"// pragma translate_off
+reg ~TYPO ~GENSYM[rst_n][0];
+initial begin
+  #1 ~SYM[0] = 0;
+  #2 ~SYM[0] = 1;
+end
+assign ~RESULT = ~SYM[0];
+// pragma translate_on"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "CLaSH.Prelude.Testbench.hdlSimFinish"
+    , "type"      :
+"hdlSimFinish :: Signal domain Bool -> Signal domain Bool"
+    , "templateD" :
+"assign ~RESULT = ~ARG[0];
+
+// pragma translate_off
+always @(*) begin
+  if (~ARG[0] == 1'b1) begin
+    $finish;
+  end
+end
+// pragma translate_on
+"
     }
   }
 ]

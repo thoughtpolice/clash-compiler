@@ -14,11 +14,9 @@ module CLaSH.Netlist.Types where
 
 import Control.DeepSeq
 import Control.Monad.State.Strict           (MonadIO, MonadState, StateT)
-import Control.Monad.Writer.Strict          (MonadWriter, WriterT)
 import Data.Hashable
 import Data.HashMap.Lazy                    (HashMap)
 import Data.IntMap.Lazy                     (IntMap, empty)
-import Data.Set                             (Set)
 import qualified Data.Text                  as S
 import Data.Text.Lazy                       (Text, pack)
 import GHC.Generics                         (Generic)
@@ -37,13 +35,8 @@ import CLaSH.Util
 -- | Monad that caches generated components (StateT) and remembers hidden inputs
 -- of components that are being generated (WriterT)
 newtype NetlistMonad a =
-  NetlistMonad { runNetlist :: WriterT
-                               (Set (Identifier,HWType))
-                               (StateT NetlistState (FreshMT IO))
-                               a
-               }
-  deriving (Functor, Monad, Applicative, MonadWriter (Set (Identifier,HWType)),
-            MonadState NetlistState, Fresh, MonadIO)
+  NetlistMonad { runNetlist :: StateT NetlistState (FreshMT IO) a }
+  deriving (Functor, Monad, Applicative, MonadState NetlistState, Fresh, MonadIO)
 
 -- | State of the NetlistMonad
 data NetlistState
@@ -71,7 +64,6 @@ type Identifier = Text
 data Component
   = Component
   { componentName :: !Identifier -- ^ Name of the component
-  , hiddenPorts   :: [(Identifier,HWType)] -- ^ Ports that have no correspondence the original function definition
   , inputs        :: [(Identifier,HWType)] -- ^ Input ports
   , outputs       :: [(Identifier,HWType)] -- ^ Output ports
   , declarations  :: [Declaration] -- ^ Internal declarations
@@ -80,8 +72,8 @@ data Component
 
 instance NFData Component where
   rnf c = case c of
-    Component nm hi inps outps decls -> rnf nm `seq` rnf hi `seq` rnf inps `seq`
-                                        rnf outps `seq` rnf decls
+    Component nm inps outps decls -> rnf nm `seq` rnf inps `seq`
+                                     rnf outps `seq` rnf decls `seq` ()
 
 -- | Size indication of a type (e.g. bit-size or number of elements)
 type Size = Int
@@ -175,8 +167,8 @@ data Bit
 -- | Context used to fill in the holes of a BlackBox template
 data BlackBoxContext
   = Context
-  { bbResult    :: (SyncExpr,HWType) -- ^ Result name and type
-  , bbInputs    :: [(SyncExpr,HWType,Bool)] -- ^ Argument names, types, and whether it is a literal
+  { bbResult    :: (Expr,HWType) -- ^ Result name and type
+  , bbInputs    :: [(Expr,HWType,Bool)] -- ^ Argument names, types, and whether it is a literal
   , bbFunctions :: IntMap (Either BlackBoxTemplate Declaration,BlackBoxContext)
   -- ^ Function arguments (subset of inputs):
   --
@@ -185,11 +177,6 @@ data BlackBoxContext
   deriving Show
 
 emptyBBContext :: BlackBoxContext
-emptyBBContext = Context (Left $ Identifier (pack "__EMPTY__") Nothing, Void) [] empty
-
--- | Either the name of the identifier, or a tuple of the identifier and the
--- corresponding clock
-type SyncIdentifier = Either Identifier (Identifier,(Identifier,Int))
-type SyncExpr       = Either Expr       (Expr,(Identifier,Integer))
+emptyBBContext = Context (Identifier (pack "__EMPTY__") Nothing, Void) [] empty
 
 makeLenses ''NetlistState

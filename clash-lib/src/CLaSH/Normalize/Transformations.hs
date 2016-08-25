@@ -70,7 +70,7 @@ import           CLaSH.Core.Type             (TypeView (..), applyFunTy,
 import           CLaSH.Core.TyCon            (tyConDataCons)
 import           CLaSH.Core.Util             (collectArgs, idToVar, isCon,
                                               isFun, isLet, isPolyFun, isPrim,
-                                              isSignalType, isVar, mkApps,
+                                              isSignalType, isClockOrReset, isVar, mkApps,
                                               mkLams, mkTmApps, mkVec,
                                               termSize, termType, tyNatSize)
 import           CLaSH.Core.Var              (Id, Var (..))
@@ -511,7 +511,11 @@ constantSpec ctx e@(App e1 e2)
   , (_, [])     <- Either.partitionEithers args
   , null $ Lens.toListOf termFreeTyVars e2
   , isConstant e2
-  = specializeNorm ctx e
+  = do tcm <- Lens.view tcCache
+       e2Ty <- termType tcm e2
+       case isClockOrReset tcm e2Ty of
+         False -> specializeNorm ctx e
+         _ -> return e
 
 constantSpec _ e = return e
 

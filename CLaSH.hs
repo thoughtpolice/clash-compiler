@@ -39,11 +39,11 @@ doHDL b src = do
   startTime <- Clock.getCurrentTime
   pd      <- primDir b
   primMap <- generatePrimMap [pd,"."]
-  (bindingsMap,tcm,tupTcm,topEnt,testInpM,expOutM) <- generateBindings primMap src Nothing
+  (bindingsMap,tcm,tupTcm,topEnt,testBenchM) <- generateBindings primMap src Nothing
   prepTime <- startTime `deepseq` bindingsMap `deepseq` tcm `deepseq` Clock.getCurrentTime
   let prepStartDiff = Clock.diffUTCTime prepTime startTime
   putStrLn $ "Loading dependencies took " ++ show prepStartDiff
-  generateHDL bindingsMap (Just b) primMap tcm tupTcm (ghcTypeToHWType WORD_SIZE_IN_BITS) reduceConstant topEnt testInpM expOutM (CLaSHOpts 20 20 15 DebugFinal True WORD_SIZE_IN_BITS Nothing HDLSYN True) (startTime,prepTime)
+  generateHDL bindingsMap (Just b) primMap tcm tupTcm (ghcTypeToHWType WORD_SIZE_IN_BITS) reduceConstant topEnt testBenchM (CLaSHOpts 20 20 15 DebugFinal True WORD_SIZE_IN_BITS Nothing HDLSYN True) (startTime,prepTime)
 
 main :: IO ()
 main = genVHDL "./examples/FIR.hs"

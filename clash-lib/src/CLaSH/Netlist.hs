@@ -15,14 +15,11 @@ import           Control.Exception                (throw)
 import           Control.Lens                     ((.=),(^.),_1,_2)
 import qualified Control.Lens                     as Lens
 import           Control.Monad.State.Strict       (runStateT)
-import           Control.Monad.Writer.Strict      (listen, runWriterT, tell)
 import           Data.Char                        (ord)
 import           Data.Either                      (lefts,partitionEithers)
 import           Data.HashMap.Lazy                (HashMap)
 import qualified Data.HashMap.Lazy                as HashMap
 import           Data.List                        (elemIndex)
-import           Data.Maybe                       (fromMaybe)
-import           Data.Set                         (toList,fromList)
 import qualified Data.Text.Lazy                   as Text
 import           Unbound.Generics.LocallyNameless (Embed (..), name2String,
                                                   runFreshMT, unbind, unembed,
@@ -60,8 +57,6 @@ genNetlist :: HashMap TmName (Type,SrcSpan,Term)
            -- ^ TyCon cache
            -> (HashMap TyConName TyCon -> Type -> Maybe (Either String HWType))
            -- ^ Hardcoded Type -> HWType translator
-           -> Maybe Int
-           -- ^ Symbol count
            -> String
            -- ^ Name of the module containing the @topEntity@
            -> [(String,FilePath)]
@@ -70,15 +65,14 @@ genNetlist :: HashMap TmName (Type,SrcSpan,Term)
            -- ^ Int/Word/Integer bit-width
            -> (Identifier -> Identifier)
            -- ^ valid identifiers
-           -> [Identifier]
+           -> (HashMap TmName (SrcSpan,Component), [Identifier])
            -- ^ Seen components
            -> TmName
            -- ^ Name of the @topEntity@
-           -> IO ([(SrcSpan,Component)],[(String,FilePath)],[Identifier])
-genNetlist globals primMap tcm typeTrans mStart modName dfiles iw mkId seen topEntity = do
-
-  (_,s) <- runNetlistMonad globals primMap tcm typeTrans modName dfiles iw mkId seen $ genComponent topEntity mStart
-  return (HashMap.elems $ _components s, _dataFiles s, _seenComps s)
+           -> IO ([(SrcSpan,Component)],[(String,FilePath)],(HashMap TmName (SrcSpan,Component), [Identifier]))
+genNetlist globals primMap tcm typeTrans modName dfiles iw mkId seen topEntity = do
+  (_,s) <- runNetlistMonad globals primMap tcm typeTrans modName dfiles iw mkId seen $ genComponent topEntity
+  return (HashMap.elems $ _components s, _dataFiles s, (_components s, _seenComps s))
 
 -- | Run a NetlistMonad action in a given environment
 runNetlistMonad :: HashMap TmName (Type,SrcSpan,Term)
@@ -97,19 +91,18 @@ runNetlistMonad :: HashMap TmName (Type,SrcSpan,Term)
                 -- ^ Int/Word/Integer bit-width
                 -> (Identifier -> Identifier)
                 -- ^ valid identifiers
-                -> [Identifier]
+                -> (HashMap TmName (SrcSpan,Component), [Identifier])
                 -- ^ Seen components
                 -> NetlistMonad a
                 -- ^ Action to run
                 -> IO (a, NetlistState)
-runNetlistMonad s p tcm typeTrans modName dfiles iw mkId seen
+runNetlistMonad s p tcm typeTrans modName dfiles iw mkId (seen,seenIds_)
   = runFreshMT
   . flip runStateT s'
-  . (fmap fst . runWriterT)
   . runNetlist
   where
-    s' = NetlistState s HashMap.empty 0 HashMap.empty p typeTrans tcm (Text.empty,noSrcSpan) dfiles iw mkId [] seen' names
-    (seen',names) = genNames mkId modName seen HashMap.empty (HashMap.keys s)
+    s' = NetlistState s HashMap.empty 0 seen p typeTrans tcm (Text.empty,noSrcSpan) dfiles iw mkId [] seenIds' names
+    (seenIds',names) = genNames mkId modName seenIds_ HashMap.empty (HashMap.keys s)
 
 genNames :: (Identifier -> Identifier)
          -> String
@@ -127,24 +120,22 @@ genNames mkId modName = go
 
 -- | Generate a component for a given function (caching)
 genComponent :: TmName -- ^ Name of the function
-             -> Maybe Int -- ^ Starting value of the unique counter
              -> NetlistMonad (SrcSpan,Component)
-genComponent compName mStart = do
+genComponent compName = do
   compExprM <- fmap (HashMap.lookup compName) $ Lens.use bindings
   case compExprM of
     Nothing -> do
       (_,sp) <- Lens.use curCompNm
       throw (CLaSHException sp ($(curLoc) ++ "No normalized expression found for: " ++ show compName) Nothing)
     Just (_,_,expr_) -> makeCached compName components $
-                          genComponentT compName expr_ mStart
+                          genComponentT compName expr_
 
 -- | Generate a component for a given function
 genComponentT :: TmName -- ^ Name of the function
               -> Term -- ^ Corresponding term
-              -> Maybe Int -- ^ Starting value of the unique counter
               -> NetlistMonad (SrcSpan,Component)
-genComponentT compName componentExpr mStart = do
-  varCount .= fromMaybe 0 mStart
+genComponentT compName componentExpr = do
+  varCount .= 0
   componentName' <- (HashMap.! compName) <$> Lens.use componentNames
   sp <- ((^. _2) . (HashMap.! compName)) <$> Lens.use bindings
   curCompNm .= (componentName',sp)
@@ -174,11 +165,11 @@ genComponentT compName componentExpr mStart = do
                         NetDecl (Text.pack . name2String $ varName id_)
                                 (unsafeCoreTypeToHWType $(curLoc) typeTrans tcm . unembed $ varType id_)
                      ) $ filter ((/= result) . varName . fst) binders
-  (decls,clks) <- listen $ concat <$> mapM (uncurry mkDeclarations . second unembed) binders
+  decls <- concat <$> mapM (uncurry mkDeclarations . second unembed) binders
 
   let compInps       = zip (map (Text.pack . name2String . varName) arguments) argTypes
       compOutp       = (Text.pack $ name2String result, resType)
-      component      = Component componentName' (toList clks) compInps [compOutp] (netDecls ++ decls)
+      component      = Component componentName' compInps [compOutp] (netDecls ++ decls)
   return (sp,component)
 
 
@@ -326,19 +317,17 @@ mkFunApp dst fun args = do
   normalized <- Lens.use bindings
   case HashMap.lookup fun normalized of
     Just _ -> do
-      (_,Component compName hidden compInps [compOutp] _) <- preserveVarEnv $ genComponent fun Nothing
+      (_,Component compName compInps [compOutp] _) <- preserveVarEnv $ genComponent fun
       if length args == length compInps
         then do tcm <- Lens.use tcCache
                 argTys                <- mapM (termType tcm) args
                 let dstId = Text.pack . name2String $ varName dst
                 (argExprs,argDecls)   <- fmap (second concat . unzip) $! mapM (\(e,t) -> mkExpr False (Left dstId) t e) (zip args argTys)
                 (argExprs',argDecls') <- (second concat . unzip) <$> mapM (toSimpleVar dst) (zip argExprs argTys)
-                let hiddenAssigns = map (\(i,t) -> (i,In,t,Identifier i Nothing)) hidden
-                    inpAssigns    = zipWith (\(i,t) e -> (i,In,t,e)) compInps argExprs'
+                let inpAssigns    = zipWith (\(i,t) e -> (i,In,t,e)) compInps argExprs'
                     outpAssign    = (fst compOutp,Out,snd compOutp,Identifier dstId Nothing)
                     instLabel     = Text.concat [compName, Text.pack "_", dstId]
-                    instDecl      = InstDecl compName instLabel (outpAssign:hiddenAssigns ++ inpAssigns)
-                tell (fromList hidden)
+                    instDecl      = InstDecl compName instLabel (outpAssign:inpAssigns)
                 return (argDecls ++ argDecls' ++ [instDecl])
         else error $ $(curLoc) ++ "under-applied normalized function"
     Nothing -> case args of

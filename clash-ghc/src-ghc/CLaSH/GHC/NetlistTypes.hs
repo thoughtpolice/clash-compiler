@@ -4,6 +4,7 @@
   Maintainer  :  Christiaan Baaij <christiaan.baaij@gmail.com>
 -}
 
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE ViewPatterns    #-}
 
@@ -14,13 +15,15 @@ where
 import Data.Coerce                      (coerce)
 import Data.Functor.Identity            (Identity (..))
 import Data.HashMap.Strict              (HashMap,(!))
+import Data.Text.Lazy                   (pack)
 import Control.Monad.Trans.Except       (ExceptT (..), mapExceptT, runExceptT)
 import Unbound.Generics.LocallyNameless (name2String)
 
 import CLaSH.Core.DataCon               (DataCon (..))
 import CLaSH.Core.Pretty                (showDoc)
 import CLaSH.Core.TyCon                 (TyCon (..), TyConName, tyConDataCons)
-import CLaSH.Core.Type                  (Type (..), TypeView (..), tyView)
+import CLaSH.Core.Type                  (LitTy (..), Type (..), TypeView (..),
+                                         coreView, tyView)
 import CLaSH.Core.Util                  (tyNatSize)
 import CLaSH.Netlist.Util               (coreTypeToHWType)
 import CLaSH.Netlist.Types              (HWType(..))
@@ -115,6 +118,26 @@ ghcTypeToHWType iw = go
           (TyConApp (name2String -> "GHC.Types.Char") []) -> return String
           _ -> fail $ "Can't translate type: " ++ showDoc ty
 
+        "CLaSH.Signal.Internal.Clock"
+          | [_clkKind,dom] <- args
+          -> do (nm,rate) <- domain m dom
+                return (Clock (pack nm) rate)
+
+        "CLaSH.Signal.Internal.Reset"
+          | [_rstKind,dom] <- args
+          -> do (nm,rate) <- domain m dom
+                return (Reset (pack nm) rate)
+
         _ -> ExceptT Nothing
 
     go _ _ = Nothing
+
+domain :: HashMap TyConName TyCon
+       -> Type
+       -> ExceptT String Maybe (String,Integer)
+domain m (coreView m -> Just ty') = domain m ty'
+domain m (tyView -> TyConApp tcNm [LitTy (SymTy nm),rateTy])
+  | name2String tcNm == "CLaSH.Signal.Internal.Domain"
+  = do rate <- mapExceptT (Just . coerce) (tyNatSize m rateTy)
+       return (nm,rate)
+domain _ ty = fail $ "Can't translate domain: " ++ showDoc ty

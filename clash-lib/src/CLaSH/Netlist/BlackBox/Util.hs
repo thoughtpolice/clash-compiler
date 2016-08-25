@@ -20,11 +20,9 @@ module CLaSH.Netlist.BlackBox.Util where
 import           Control.Exception                    (throw)
 import           Control.Monad.State                  (State, StateT, evalStateT,
                                                        lift, modify, get)
-import           Control.Monad.Writer.Strict          (MonadWriter, tell)
 import           Data.Foldable                        (foldrM)
 import qualified Data.IntMap                          as IntMap
 import           Data.List                            (mapAccumL, nub)
-import           Data.Set                             (Set,singleton)
 import           Data.Text.Lazy                       (Text)
 import qualified Data.Text.Lazy                       as Text
 import           System.FilePath                      (replaceBaseName,
@@ -42,7 +40,7 @@ import           CLaSH.Netlist.BlackBox.Parser
 import           CLaSH.Netlist.BlackBox.Types
 import           CLaSH.Netlist.Types                  (HWType (..), Identifier,
                                                        BlackBoxContext (..),
-                                                       SyncExpr, Expr (..),
+                                                       Expr (..),
                                                        Literal (..), NetlistMonad,
                                                        Modifier (..))
 import           CLaSH.Netlist.Util                   (mkUniqueIdentifier,typeSize)
@@ -73,7 +71,7 @@ verifyBlackBoxContext bbCtx = all verify'
 
 extractLiterals :: BlackBoxContext
                 -> [Expr]
-extractLiterals = map (\case (e,_,_) -> either id fst e)
+extractLiterals = map (\case (e,_,_) -> e)
                 . filter (\case (_,_,b) -> b)
                 . bbInputs
 
@@ -126,45 +124,15 @@ setCompName nm = map setCompName'
     setCompName' (BV t e m)     = BV t (setCompName nm e) (setCompName' m)
     setCompName' e              = e
 
-setClocks :: MonadWriter (Set (Identifier,HWType)) m
-          => BlackBoxContext
-          -> BlackBoxTemplate
-          -> m BlackBoxTemplate
-setClocks bc bt = mapM setClocks' bt
-  where
-    setClocks' (D (Decl n l)) = D <$> (Decl n <$> mapM (combineM (setClocks bc) (setClocks bc)) l)
-    setClocks' (IF c t f)     = IF <$> pure c <*> setClocks bc t <*> setClocks bc f
-    setClocks' (SigD e m)     = SigD <$> (setClocks bc e) <*> pure m
-    setClocks' (BV t e m)     = BV <$> pure t <*> setClocks bc e <*> pure m
-
-    setClocks' (Clk Nothing)  = let (clk,rate) = clkSyncId $ fst $ bbResult bc
-                                    clkName    = Text.append clk (Text.pack (show rate))
-                                in  tell (singleton (clkName,Clock clk rate)) >> return (C clkName)
-    setClocks' (Clk (Just n)) = let (e,_,_)    = bbInputs bc !! n
-                                    (clk,rate) = clkSyncId e
-                                    clkName    = Text.append clk (Text.pack (show rate))
-                                in  tell (singleton (clkName,Clock clk rate)) >> return (C clkName)
-
-    setClocks' (Rst Nothing)  = let (rst,rate) = clkSyncId $ fst $ bbResult bc
-                                    rstName    = Text.concat [rst,Text.pack (show rate),"_rstn"]
-                                in  tell (singleton (rstName,Reset rst rate)) >> return (C rstName)
-    setClocks' (Rst (Just n)) = let (e,_,_)    = bbInputs bc !! n
-                                    (rst,rate) = clkSyncId e
-                                    rstName    = Text.concat [rst,Text.pack (show rate),"_rstn"]
-                                in  tell (singleton (rstName,Reset rst rate)) >> return (C rstName)
-
-    setClocks' e = return e
-
 findAndSetDataFiles :: BlackBoxContext -> [(String,FilePath)] -> BlackBoxTemplate -> ([(String,FilePath)],BlackBoxTemplate)
 findAndSetDataFiles bbCtx fs = mapAccumL findAndSet fs
   where
     findAndSet fs' (FilePath e) = case e of
       (L n) ->
-        let (s,_,_) = bbInputs bbCtx !! n
-            e'      = either id fst s
+        let (e',_,_) = bbInputs bbCtx !! n
         in case e' of
           BlackBoxE "GHC.CString.unpackCString#" _ bbCtx' _ -> case bbInputs bbCtx' of
-            [(Left (Literal Nothing (StringLit s')),_,_)] -> renderFilePath fs s'
+            [(Literal Nothing (StringLit s'),_,_)] -> renderFilePath fs s'
             _ -> (fs',FilePath e)
           _ -> (fs',FilePath e)
       _ -> (fs',FilePath e)
@@ -179,12 +147,6 @@ renderFilePath fs f = ((f'',f):fs,C (Text.pack $ show f''))
     selectNewName as a
       | elem a as = selectNewName as (replaceBaseName a (takeBaseName a ++ "_"))
       | otherwise = a
-
-
--- | Get the name of the clock of an identifier
-clkSyncId :: SyncExpr -> (Identifier,Integer)
-clkSyncId (Right (_,clk)) = clk
-clkSyncId (Left i) = error $ $(curLoc) ++ "No clock for: " ++ show i
 
 -- | Render a blackbox given a certain context. Returns a filled out template
 -- and a list of 'hidden' inputs that must be added to the encompassing component.
@@ -202,8 +164,8 @@ renderElem :: Backend backend
            -> Element
            -> State backend Text
 renderElem b (D (Decl n (l:ls))) = do
-    (o,oTy,_) <- syncIdToSyncExpr <$> combineM (lineToIdentifier b) (return . lineToType b) l
-    is <- mapM (fmap syncIdToSyncExpr . combineM (lineToIdentifier b) (return . lineToType b)) ls
+    (o,oTy,_) <- idToExpr <$> combineM (lineToIdentifier b) (return . lineToType b) l
+    is <- mapM (fmap idToExpr . combineM (lineToIdentifier b) (return . lineToType b)) ls
     let Just (templ,pCtx)    = IntMap.lookup n (bbFunctions b)
         b' = pCtx { bbResult = (o,oTy), bbInputs = bbInputs pCtx ++ is }
     templ' <- case templ of
@@ -237,20 +199,18 @@ renderElem b (IF c t f) = do
                        (Vector n _) -> n
                        _ -> error $ $(curLoc) ++ "IF: veclen of a non-vector type"
       (L n)      -> case bbInputs b !! n of
-                      (either id fst -> Literal _ (NumLit i),_,_) -> fromInteger i
+                      (Literal _ (NumLit i),_,_) -> fromInteger i
                       _ -> error $ $(curLoc) ++ "IF: LIT must be a numeric lit"
       (Depth e)  -> case lineToType b [e] of
                       (RTree n _) -> n
                       _ -> error $ $(curLoc) ++ "IF: treedepth of non-tree type"
       IW64       -> if iw == 64 then 1 else 0
       (HdlSyn s) -> if s == syn then 1 else 0
-      (IsVar n)  -> let (s,_,_) = bbInputs b !! n
-                        e       = either id fst s
+      (IsVar n)  -> let (e,_,_) = bbInputs b !! n
                     in case e of
                       Identifier _ Nothing -> 1
                       _ -> 0
-      (IsLit n)  -> let (s,_,_) = bbInputs b !! n
-                        e       = either id fst s
+      (IsLit n)  -> let (e,_,_) = bbInputs b !! n
                     in case e of
                       DataCon {} -> 1
                       Literal {} -> 1
@@ -268,9 +228,9 @@ parseFail t = case runParse t of
                     (templ,err) | null err  -> templ
                                 | otherwise -> error $ $(curLoc) ++ "\nTemplate:\n" ++ show t ++ "\nHas errors:\n" ++ show err
 
-syncIdToSyncExpr :: (Text,HWType)
-                 -> (SyncExpr,HWType,Bool)
-syncIdToSyncExpr (t,ty) = (Left (Identifier t Nothing),ty,False)
+idToExpr :: (Text,HWType)
+         -> (Expr,HWType,Bool)
+idToExpr (nm,ty) = (Identifier nm Nothing, ty, False)
 
 -- | Fill out the template corresponding to an output/input assignment of a
 -- component instantiation, and turn it into a single identifier so it can
@@ -295,7 +255,7 @@ lineToType b [(TypElem t)]    = case lineToType b [t] of
                                   _ -> error $ $(curLoc) ++ "Element type selection of a non-vector type"
 lineToType b [(IndexType (L n))] =
   case bbInputs b !! n of
-    (Left (Literal _ (NumLit n')),_,_) -> Index (fromInteger n')
+    (Literal _ (NumLit n'),_,_) -> Index (fromInteger n')
     x -> error $ $(curLoc) ++ "Index type not given a literal: " ++ show x
 
 lineToType _ _ = error $ $(curLoc) ++ "Unexpected type manipulation"
@@ -307,12 +267,10 @@ renderTag :: Backend backend
           -> Element
           -> State backend Text
 renderTag _ (C t)           = return t
-renderTag b O               = fmap (displayT . renderOneLine) . expr False . either id fst . fst $ bbResult b
-renderTag b (I n)           = let (s,_,_) = bbInputs b !! n
-                                  e       = either id fst s
+renderTag b O               = fmap (displayT . renderOneLine) . expr False . fst $ bbResult b
+renderTag b (I n)           = let (e,_,_) = bbInputs b !! n
                               in  (displayT . renderOneLine) <$> expr False e
-renderTag b (L n)           = let (s,_,_) = bbInputs b !! n
-                                  e       = either id fst s
+renderTag b (L n)           = let (e,_,_) = bbInputs b !! n
                               in  (displayT . renderOneLine) <$> expr False (mkLit e)
   where
     mkLit (Literal (Just (Signed _,_)) i) = Literal Nothing i
@@ -353,8 +311,7 @@ renderTag b e@(TypElem _)   = let ty = lineToType b [e]
 renderTag _ (Gen b)         = displayT . renderOneLine <$> genStmt b
 renderTag _ (GenSym [C t] _) = return t
 renderTag b (Vars n)        =
-  let (s,_,_) = bbInputs b !! n
-      e       = either id fst s
+  let (e,_,_) = bbInputs b !! n
 
       go (Identifier i _) = [i]
       go (DataCon _ _ es) = concatMap go es
@@ -367,7 +324,7 @@ renderTag b (Vars n)        =
         _  -> return (Text.concat $ map (Text.cons ',') vars)
 renderTag b (IndexType (L n)) =
   case bbInputs b !! n of
-    (Left (Literal _ (NumLit n')),_,_) ->
+    (Literal _ (NumLit n'),_,_) ->
       let hty = Index (fromInteger n')
       in  fmap (displayT . renderOneLine) (hdlType hty)
     x -> error $ $(curLoc) ++ "Index type not given a literal: " ++ show x

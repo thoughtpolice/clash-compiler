@@ -95,12 +95,14 @@ callGraph :: [TmName] -- ^ List of functions that should not be inspected
           -> HashMap TmName (Type,SrcSpan,Term) -- ^ Global binders
           -> TmName -- ^ Root of the call graph
           -> [(TmName,[TmName])]
-callGraph visited bindingMap root = node:other
-  where
-    rootTm = Maybe.fromMaybe (error $ show root ++ " is not a global binder") $ HashMap.lookup root bindingMap
-    used   = Set.toList $ Lens.setOf termFreeIds (rootTm ^. _3)
-    node   = (root,used)
-    other  = concatMap (callGraph (root:visited) bindingMap) (filter (`notElem` visited) used)
+callGraph visited bindingMap root
+  | Just rootTm <- HashMap.lookup root bindingMap
+  = let used   = Set.toList $ Lens.setOf termFreeIds (rootTm ^. _3)
+        node   = (root,used)
+        other  = concatMap (callGraph (root:visited) bindingMap) (filter (`notElem` visited) used)
+    in  node : other
+
+callGraph _ _ _ = []
 
 -- | Determine the sets of recursive components given the edges of a callgraph
 mkRecursiveComponents :: [(TmName,[TmName])] -- ^ [(calling function,[called function])]

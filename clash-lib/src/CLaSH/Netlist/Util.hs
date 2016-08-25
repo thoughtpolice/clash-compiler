@@ -26,12 +26,12 @@ import           Unbound.Generics.LocallyNameless (Embed, Fresh, bind, embed, ma
                                           unembed, unrec)
 
 import           CLaSH.Core.DataCon      (DataCon (..))
-import           CLaSH.Core.FreeVars     (termFreeIds, typeFreeVars)
+import           CLaSH.Core.FreeVars     (termFreeIds)
 import           CLaSH.Core.Pretty       (showDoc)
 import           CLaSH.Core.Subst        (substTys)
 import           CLaSH.Core.Term         (LetBinding, Term (..), TmName)
 import           CLaSH.Core.TyCon        (TyCon (..), TyConName, tyConDataCons)
-import           CLaSH.Core.Type         (Type (..), TypeView (..), LitTy (..),
+import           CLaSH.Core.Type         (Type (..), TypeView (..),
                                           coreView, splitTyConAppM, tyView)
 import           CLaSH.Core.Util         (collectBndrs, termType)
 import           CLaSH.Core.Var          (Id, Var (..), modifyVarName)
@@ -86,33 +86,6 @@ unsafeCoreTypeToHWTypeM loc ty = unsafeCoreTypeToHWType loc <$> Lens.use typeTra
 coreTypeToHWTypeM :: Type
                   -> NetlistMonad (Maybe HWType)
 coreTypeToHWTypeM ty = hush <$> (coreTypeToHWType <$> Lens.use typeTranslator <*> Lens.use tcCache <*> pure ty)
-
--- | Returns the name and period of the clock corresponding to a type
-synchronizedClk :: HashMap TyConName TyCon -- ^ TyCon cache
-                -> Type
-                -> Maybe (Identifier,Integer)
-synchronizedClk tcm ty
-  | not . null . Lens.toListOf typeFreeVars $ ty = Nothing
-  | Just (tyCon,args) <- splitTyConAppM ty
-  = case name2String tyCon of
-      "CLaSH.Sized.Vector.Vec"        -> synchronizedClk tcm (args!!1)
-      "CLaSH.Signal.Internal.SClock" -> case splitTyConAppM (head args) of
-                                          Just (_,[LitTy (SymTy s),LitTy (NumTy i)]) -> Just (pack s,i)
-                                          _ -> error $ $(curLoc) ++ "Clock period not a simple literal: " ++ showDoc ty
-      "CLaSH.Signal.Internal.Signal'" -> case splitTyConAppM (head args) of
-                                           Just (_,[LitTy (SymTy s),LitTy (NumTy i)]) -> Just (pack s,i)
-                                           _ -> error $ $(curLoc) ++ "Clock period not a simple literal: " ++ showDoc ty
-      _                               -> case tyConDataCons (tcm HashMap.! tyCon) of
-                                           [dc] -> let argTys   = dcArgTys dc
-                                                       argTVs   = dcUnivTyVars dc
-                                                       argSubts = zip argTVs args
-                                                       args'    = map (substTys argSubts) argTys
-                                                   in case args' of
-                                                      (arg:_) -> synchronizedClk tcm arg
-                                                      _ -> Nothing
-                                           _    -> Nothing
-  | otherwise
-  = Nothing
 
 -- | Converts a Core type to a HWType given a function that translates certain
 -- builtin types. Returns a string containing the error message when the Core

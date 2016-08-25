@@ -92,8 +92,7 @@ loadModules ::
         , [CoreSyn.CoreBndr]                       -- Unlocatable Expressions
         , FamInstEnv.FamInstEnvs
         , (CoreSyn.CoreBndr, Maybe TopEntity)      -- topEntity bndr + (maybe) TopEntity annotation
-        , Maybe CoreSyn.CoreBndr                   -- testInput bndr
-        , Maybe CoreSyn.CoreBndr                   -- expectedOutput bndr
+        , Maybe CoreSyn.CoreBndr                   -- testBench bndr
         )
 loadModules modName dflagsM = GHC.defaultErrorHandler DynFlags.defaultFatalMessager
                               DynFlags.defaultFlushOut $ do
@@ -119,6 +118,7 @@ loadModules modName dflagsM = GHC.defaultErrorHandler DynFlags.defaultFatalMessa
                                 , LangExt.TypeApplications
                                 , LangExt.ScopedTypeVariables
                                 , LangExt.MagicHash
+                                , LangExt.ImplicitParams
                                 ]
                   let dfDis = foldl DynFlags.xopt_unset dfEn
                                 [ LangExt.ImplicitPrelude
@@ -195,9 +195,8 @@ loadModules modName dflagsM = GHC.defaultErrorHandler DynFlags.defaultFatalMessa
 
         topEntM <- findCLaSHAnnotations rootBndrs
         let varNameString = OccName.occNameString . Name.nameOccName . Var.varName
-            topEntities     = filter ((== "topEntity") . varNameString) rootBndrs
-            testInputs      = filter ((== "testInput") . varNameString) rootBndrs
-            expectedOutputs = filter ((== "expectedOutput") . varNameString) rootBndrs
+            topEntities   = filter ((== "topEntity") . varNameString) rootBndrs
+            testBenches   = filter ((== "testBench") . varNameString) rootBndrs
         topEntity <- case topEntities of
           [] -> case topEntM of
                   Just (l,r) -> return (l,Just r)
@@ -209,16 +208,12 @@ loadModules modName dflagsM = GHC.defaultErrorHandler DynFlags.defaultFatalMessa
                                                              (Outputable.showSDocUnsafe (ppr rootModule <> dot <> ppr l))
                   Nothing -> return (x,Nothing)
           _ -> Panic.pgmError $ $(curLoc) ++  "Multiple 'topEntities' found."
-        testInput <- case testInputs of
-          []  -> return Nothing
-          [x] -> return (Just x)
-          _  -> Panic.pgmError $ $(curLoc) ++ "Multiple 'testInput's found."
-        expectedOutput <- case expectedOutputs of
+        testBench <- case testBenches of
           []  -> return Nothing
           [x] -> return (Just x)
           _  -> Panic.pgmError $ $(curLoc) ++ "Multiple 'testInput's found."
 
-        return (binders ++ externalBndrs,clsOps,unlocatable,(fst famInstEnvs,modFamInstEnvs'),topEntity,testInput,expectedOutput)
+        return (binders ++ externalBndrs,clsOps,unlocatable,(fst famInstEnvs,modFamInstEnvs'),topEntity,testBench)
       GHC.Failed -> Panic.pgmError $ $(curLoc) ++ "failed to load module: " ++ modName
 
 findCLaSHAnnotations :: GHC.GhcMonad m
