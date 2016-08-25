@@ -1,18 +1,20 @@
 [ { "BlackBox" :
     { "name" : "CLaSH.Signal.Internal.register#"
     , "type" :
-"register# :: SClock clk     -- ARG[0]
-           -> a              -- ARG[1]
-           -> Signal' clk a  -- ARG[2]
-           -> Signal' clk a"
+"register# :: HasCallStack  -- 0
+           => Reset reset domain -- 1
+           -> Clock clk domain -- 2
+           -> a -- 3
+           -> Signal domain a -- 4
+           -> Signal domain a"
     , "templateD" :
 "-- register begin
-~GENSYM[~COMPNAME_register][0] : process(~CLK[0],~RST[0]~VARS[1])
+~GENSYM[~COMPNAME_register][0] : process(~ARG[1],~ARG[2]~VARS[3])
 begin
-  if ~RST[0] = '0' then
-    ~RESULT <= ~ARG[1];
-  elsif rising_edge(~CLK[0]) then
-    ~RESULT <= ~ARG[2];
+  if ~ARG[1] = '0' then
+    ~RESULT <= ~ARG[3];
+  elsif rising_edge(~ARG[2]) then
+    ~RESULT <= ~ARG[4];
   end if;
 end process;
 -- register end"

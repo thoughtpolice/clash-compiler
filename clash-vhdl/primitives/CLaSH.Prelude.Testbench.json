@@ -1,8 +1,8 @@
 [ { "BlackBox" :
-    { "name" : "CLaSH.Prelude.Testbench.assert'"
+    { "name" : "CLaSH.Prelude.Testbench.assert#"
     , "type" :
-"assert' :: (Eq a,Show a) -- (ARG[0],ARG[1])
-         => SClock t      -- ^ ARG[2]
+"assert# :: (Eq a,Show a) -- (ARG[0],ARG[1])
+         => Clock t      -- ^ ARG[2]
          -> String        -- ^ ARG[3]
          -> Signal' t a   -- ^ Checked value (ARG[4])
          -> Signal' t a   -- ^ Expected value (ARG[5])
@@ -32,9 +32,9 @@ begin
   -- pragma translate_off
   ~SYM[2] <= ~ARG[4];
   ~SYM[3] <= ~ARG[5];
-  process(~CLK[2],~RST[2]) is
+  process(~ARG[2]) is
   begin
-    if (rising_edge(~CLK[2]) or rising_edge(~RST[2])) then
+    if (rising_edge(~ARG[2])) then
       assert (~SYM[2] = ~SYM[3]) report (~LIT[3] & \", expected: \" & ~SYM[1](toSLV(~SYM[3])) & \", actual: \" & ~SYM[1](toSLV(~SYM[2]))) severity error;
     end if;
   end process;
@@ -42,6 +42,69 @@ begin
   ~RESULT <= ~ARG[6];
 end block;
 -- assert end"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "CLaSH.Prelude.Testbench.clockGen"
+    , "type" :
+"clockGen :: forall domain nm period .
+            ( KnownSymbol nm  -- LIT[0]
+            , KnownNat period -- LIT[1]
+            , domain ~ 'Domain nm period)
+         => Clock 'Original domain"
+    , "templateD" :
+"-- pragma translate_off
+~GENSYM[clkGen][0] : process is
+  constant ~GENSYM[half_period][1] : time := ~LIT[1] ns / 2;
+begin
+  ~RESULT <= '0';
+  wait for 3 ns;
+  while true loop
+    ~RESULT <= not ~RESULT;
+    wait for ~SYM[1];
+    ~RESULT <= not ~RESULT;
+    wait for ~SYM[1];
+  end loop;
+  wait;
+end process;
+-- pragma translate_on"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "CLaSH.Prelude.Testbench.asyncResetGen"
+    , "type" :
+"asyncResetGen :: forall domain nm period .
+                 ( KnownSymbol nm  -- LIT[0]
+                 , KnownNat period -- LIT[1]
+                 , domain ~ 'Domain nm period)
+              => Reset 'Asynchronous domain"
+    , "templateD" :
+"-- pragma translate_off
+~RESULT <= '0',
+           '1' after 2 ns;
+-- pragma translate_on"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "CLaSH.Prelude.Testbench.hdlSimFinish"
+    , "type"      :
+"hdlSimFinish :: Signal domain Bool -> Signal domain Bool"
+    , "templateD" :
+"-- hdlSimFinish begin
+~RESULT <= ~ARG[0];
+
+-- pragma translate_off
+~GENSYM[hdlfinish][0] : block
+  signal ~GENSYM[rdy][1] : ~TYP[0];
+begin
+  ~SYM[1] <= ~ARG[0];
+  process(~SYM[1]) is
+  begin
+    assert (not ~SYM[1]) report (\"Test complete\") severity failure;
+  end process;
+end block;
+-- pragma translate_on
+-- hdlSimFinish end"
     }
   }
 ]
