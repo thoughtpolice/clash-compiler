@@ -50,7 +50,7 @@ import CoAxiom    (CoAxiom (co_ax_branches), CoAxBranch (cab_lhs,cab_rhs),
 import Coercion   (Role(..),coercionType,coercionKind,mkCoercionType)
 import CoreFVs    (exprSomeFreeVars)
 import CoreSyn    (AltCon (..), Bind (..), CoreExpr,
-                   Expr (..), Unfolding (..), rhssOfAlts, unfoldingTemplate)
+                   Expr (..), Unfolding (..), collectArgs, rhssOfAlts, unfoldingTemplate)
 import DataCon    (DataCon, dataConExTyVars,
                    dataConName, dataConRepArgTys,
                    dataConTag, dataConTyCon,
@@ -232,6 +232,15 @@ coreToTerm :: PrimMap a
 coreToTerm primMap unlocs srcsp coreExpr = Reader.runReaderT (term coreExpr) srcsp
   where
     term :: CoreExpr -> ReaderT SrcSpan (State GHC2CoreState) C.Term
+    term e
+      -- Remove most callstack logic
+      | (Var x,args) <- collectArgs e
+      , let nm = State.evalState (qualfiedNameString (varName x)) emptyGHC2CoreState
+      , nm == "GHC.Stack.Types.PushCallStack" || nm == "GHC.Stack.withFrozenCallStack"
+      = case nm of
+          "GHC.Stack.Types.PushCallStack" -> term (last args)
+          _ -> term (App (args!!2) (args!!1))
+
     term (Var x)                 = do
       srcsp' <- Reader.ask
       lift (var srcsp' x)
