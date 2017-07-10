@@ -50,8 +50,9 @@ import           CLaSH.Primitives.Util   (generatePrimMap)
 import           CLaSH.Rewrite.Util      (mkInternalVar, mkSelectorCase)
 import           CLaSH.Util              ((***),first)
 
-generateBindings ::
-     Bool
+generateBindings
+  :: Bool
+  -> Bool
   -> FilePath
   -> [FilePath]
   -> HDL
@@ -62,7 +63,7 @@ generateBindings ::
         ,Maybe TmName              -- testInput bndr
         ,Maybe TmName              -- expectedOutput bndr
         ,PrimMap Text)             -- The primitives found in '.' and 'primDir'
-generateBindings errorInvalidCoercions primDir importDirs hdl modName dflagsM = do
+generateBindings enableLambdaDrop errorInvalidCoercions primDir importDirs hdl modName dflagsM = do
   (bindings,clsOps,unlocatable,fiEnvs,(topEnt,topEntAnn),testInpM,expOutM,pFP) <- loadModules hdl modName dflagsM
   primMap <- generatePrimMap (pFP ++ (primDir:importDirs))
   let ((bindingsMap,clsVMap),tcMap) = State.runState (mkBindings errorInvalidCoercions primMap bindings clsOps unlocatable) emptyGHC2CoreState
@@ -76,18 +77,19 @@ generateBindings errorInvalidCoercions primDir importDirs hdl modName dflagsM = 
                                           testInpM'' <- traverse (coreToName GHC.varName GHC.varUnique qualfiedNameString) testInpM
                                           expOutM'' <- traverse (coreToName GHC.varName GHC.varUnique qualfiedNameString) expOutM
                                           return (topEnt'',testInpM'',expOutM'')
-      droppedAndRetypedBindings     = dropAndRetypeBindings allTcCache allBindings topEnt' testInpM' expOutM'
+      droppedAndRetypedBindings     = dropAndRetypeBindings enableLambdaDrop allTcCache allBindings topEnt' testInpM' expOutM'
 
   return (droppedAndRetypedBindings,allTcCache,tupTcCache,(topEnt',topEntAnn),testInpM',expOutM',primMap)
 
-dropAndRetypeBindings :: HashMap TyConName TyCon
+dropAndRetypeBindings :: Bool
+                      -> HashMap TyConName TyCon
                       -> BindingMap
                       -> TmName        -- ^ topEntity
                       -> Maybe TmName  -- ^ testInput
                       -> Maybe TmName  -- ^ expectedOutput
                       -> BindingMap
 
-dropAndRetypeBindings allTcCache allBindings topEnt testInpM expOutM = oBindings
+dropAndRetypeBindings enableLambdaDrop allTcCache allBindings topEnt testInpM expOutM = oBindings
   where
     topEntity = do e <- HashMap.lookup topEnt allBindings
                    return (topEnt,e)
@@ -101,7 +103,11 @@ dropAndRetypeBindings allTcCache allBindings topEnt testInpM expOutM = oBindings
     tBindings = maybe allBindings (dropAndRetype allBindings) topEntity
     iBindings = maybe tBindings (dropAndRetype tBindings) testInput
     oBindings = maybe iBindings (dropAndRetype iBindings) expectedOut
-    dropAndRetype d (t,_) = snd (retype allTcCache ([],lambdaDropPrep d t) t)
+    dropAndRetype d (t,_)
+      | enableLambdaDrop
+      = snd (retype allTcCache ([],lambdaDropPrep d t) t)
+      | otherwise
+      = snd (retype allTcCache ([],d) t)
 
 -- | clean up cast-removal mess
 retype :: HashMap TyConName TyCon
