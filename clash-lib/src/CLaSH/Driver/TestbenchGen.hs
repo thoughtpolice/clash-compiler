@@ -120,7 +120,7 @@ genTestBench opts supply primMap typeTrans tcm tupTcm eval mkId seen globals sti
                     -> TmName
                     -> HashMap TmName (Type,SrcSpan,Term)
     normalizeSignal glbls bndr = do
-      let cg  = callGraph [] glbls bndr
+      let cg  = callGraph glbls bndr
           rcs = concat $ mkRecursiveComponents cg
           rcsMap = HashMap.fromList
                  $ map (\(t,_) -> (t,t `elem` rcs)) cg

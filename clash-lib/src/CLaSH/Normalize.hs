@@ -177,7 +177,7 @@ checkNonRecursive :: TmName -- ^ @topEntity@
                   -> HashMap TmName (Type,SrcSpan,Term) -- ^ List of normalized binders
                   -> HashMap TmName (Type,SrcSpan,Term)
 checkNonRecursive topEntity norm =
-  let cg = callGraph [] norm topEntity
+  let cg = callGraph norm topEntity
   in  case mkRecursiveComponents cg of
        []  -> norm
        rcs -> error $ $(curLoc) ++ "Callgraph after normalisation contains following recursive cycles: " ++ show rcs
