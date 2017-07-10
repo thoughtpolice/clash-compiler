@@ -77,7 +77,7 @@ generateHDL bindingsMap hdlState primMap tcm tupTcm typeTrans eval (topEntity,an
   let doNorm     = do norm <- normalize [topEntity]
                       let normChecked = checkNonRecursive topEntity norm
                       cleanupGraph topEntity normChecked
-      cg         = callGraph [] bindingsMap topEntity
+      cg         = callGraph bindingsMap topEntity
       rcs        = concat $ mkRecursiveComponents cg
       rcsMap     = HML.fromList
                  $ map (\(t,_) -> (t,t `elem` rcs)) cg

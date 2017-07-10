@@ -6,8 +6,9 @@
   Utility functions used by the normalisation transformations
 -}
 
-{-# LANGUAGE LambdaCase      #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE LambdaCase       #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE TemplateHaskell  #-}
 
 module CLaSH.Normalize.Util where
 
@@ -82,7 +83,7 @@ isRecursiveBndr f = do
     Just isR -> return isR
     Nothing -> do
       bndrs <- Lens.use bindings
-      let cg'  = callGraph [] bndrs f
+      let cg'  = callGraph bndrs f
           rcs  = concat $ mkRecursiveComponents cg'
           isR  = f `elem` rcs
           cg'' = HashMap.fromList
@@ -91,16 +92,17 @@ isRecursiveBndr f = do
       return isR
 
 -- | Create a call graph for a set of global binders, given a root
-callGraph :: [TmName] -- ^ List of functions that should not be inspected
-          -> HashMap TmName (Type,SrcSpan,Term) -- ^ Global binders
+callGraph :: HashMap TmName (Type,SrcSpan,Term) -- ^ Global binders
           -> TmName -- ^ Root of the call graph
           -> [(TmName,[TmName])]
-callGraph visited bindingMap root = node:other
+callGraph = go []
   where
-    rootTm = Maybe.fromMaybe (error $ show root ++ " is not a global binder") $ HashMap.lookup root bindingMap
-    used   = Set.toList $ Lens.setOf termFreeIds (rootTm ^. _3)
-    node   = (root,used)
-    other  = concatMap (callGraph (root:visited) bindingMap) (filter (`notElem` visited) used)
+    go visited bindingMap root = node:other
+      where
+        rootTm = Maybe.fromMaybe (error $ show root ++ " is not a global binder") $ HashMap.lookup root bindingMap
+        used   = Set.toList $ Lens.setOf termFreeIds (rootTm ^. _3)
+        node   = (root,used)
+        other  = concatMap (go (root:visited) bindingMap) (filter (`notElem` visited) used)
 
 -- | Determine the sets of recursive components given the edges of a callgraph
 mkRecursiveComponents :: [(TmName,[TmName])] -- ^ [(calling function,[called function])]
@@ -118,7 +120,7 @@ lambdaDropPrep :: HashMap TmName (Type,SrcSpan,Term)
                -> HashMap TmName (Type,SrcSpan,Term)
 lambdaDropPrep bndrs topEntity = bndrs'
   where
-    depGraph = callGraph [] bndrs topEntity
+    depGraph = callGraph bndrs topEntity
     used     = HashMap.fromList depGraph
     rcs      = mkRecursiveComponents depGraph
     dropped  = map (lambdaDrop bndrs used) rcs
