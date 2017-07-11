@@ -498,10 +498,12 @@ inlineSmall _ e@(collectArgs -> (Var _ f,args)) = do
       bndrs <- Lens.use bindings
       sizeLimit <- Lens.use (extra.inlineBelow)
       case HashMap.lookup f bndrs of
-        -- Don't inline recursive expressions
-        Just (_,_,body) -> do
+        -- Don't inline recursive expressions, or expressions
+        -- that are too big. We check for whether the expression
+        -- is too big first, then whether it's recursive.
+        Just (_,_,body) | termSize body < sizeLimit -> do
           isRecBndr <- isRecursiveBndr f
-          if not isRecBndr && termSize body < sizeLimit
+          if not isRecBndr
              then changed (mkApps body args)
              else return e
         _ -> return e
