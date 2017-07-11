@@ -6,6 +6,7 @@
   Type and instance definitions for Rewrite modules
 -}
 
+{-# LANGUAGE BangPatterns               #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -106,17 +107,23 @@ newtype RewriteMonad extra a = R
 
 instance Functor (RewriteMonad extra) where
   fmap f m = R (\r s -> case runR m r s of (a,s',w) -> (f a,s',w))
+  {-# INLINE fmap #-}
 
 instance Applicative (RewriteMonad extra) where
   pure  = return
+  {-# INLINE pure #-}
   (<*>) = ap
+  {-# INLINE (<*>) #-}
 
 instance Monad (RewriteMonad extra) where
   return a = R (\_ s -> (a, s, mempty))
-  m >>= k  = R (\r s -> case runR m r s of
-                          (a,s',w) -> case runR (k a) r s' of
-                                        (b,s'',w') -> let w'' = mappend w w'
-                                                      in seq w'' (b,s'',w''))
+  {-# INLINE return #-}
+
+  m >>= k  = R $ \r s ->
+    case runR m r s of
+      (a, s', !w) -> let !v = k a in case runR v r s' of
+        (b, s'', w') -> let !v = mappend w w' in (b, s'', v)
+  {-# INLINE (>>=) #-}
 
 instance MonadState (RewriteState extra) (RewriteMonad extra) where
   get     = R (\_ s -> (s,s,mempty))
