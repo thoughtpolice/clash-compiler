@@ -90,17 +90,37 @@ isRecursiveBndr f = do
       return isR
 
 -- | Create a call graph for a set of global binders, given a root
-callGraph :: HashMap TmName (Type,SrcSpan,Term) -- ^ Global binders
-          -> TmName -- ^ Root of the call graph
-          -> [(TmName,[TmName])]
-callGraph = go []
+callGraph
+  :: HashMap TmName (Type,SrcSpan,Term)
+  -- ^ Global binders
+  -> TmName
+  -- ^ Root of the call graph
+  -> [(TmName, [TmName])] -- HashMap TmName (Set.Set TmName)
+  -- ^ Resulting map of names to the set of callees
+callGraph binders
+  = HashMap.toList
+  . HashMap.map Set.toList
+  . go Set.empty HashMap.empty
   where
-    go visited bindingMap root = node:other
+    -- Look up the terms used by a TmName
+    getTerms :: TmName -> Set.Set TmName
+    getTerms root = Lens.setOf termFreeIds (rootTm ^. _3)
       where
-        rootTm = Maybe.fromMaybe (error $ show root ++ " is not a global binder") $ HashMap.lookup root bindingMap
-        used   = Set.toList $ Lens.setOf termFreeIds (rootTm ^. _3)
-        node   = (root,used)
-        other  = concatMap (go (root:visited) bindingMap) (filter (`notElem` visited) used)
+        rootTm = Maybe.fromMaybe bad (HashMap.lookup root binders)
+        bad    = error (show root ++ " is not a global binder")
+
+    go visited st root
+      = case Set.null unvisited of
+          True  -> newMap
+          False -> Set.foldr (\v hm -> HashMap.union hm $ go newVisited newMap v) HashMap.empty unvisited
+      where
+        used      = getTerms root
+        unvisited = Set.difference used visited
+
+        -- insert the current root into the visited set, and insert the set
+        -- of used binders for this root into the map
+        newVisited = Set.insert root visited
+        newMap     = HashMap.insert root used st
 
 -- | Determine the sets of recursive components given the edges of a callgraph
 mkRecursiveComponents :: [(TmName,[TmName])] -- ^ [(calling function,[called function])]
