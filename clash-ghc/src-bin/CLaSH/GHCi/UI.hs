@@ -1741,6 +1741,7 @@ makeHDL backend optsRef srcs = do
               let iw = opt_intWidth opts
                   fp = opt_floatSupport opts
                   syn = opt_hdlSyn opts
+                  clean = opt_enableGraphCleanup opts
                   -- determine whether `-outputdir` was used
                   outputDir = do odir <- objectDir dflags
                                  hidir <- hiDir dflags
@@ -1760,7 +1761,7 @@ makeHDL backend optsRef srcs = do
                 prepTime <- startTime `deepseq` bindingsMap `deepseq` tcm `deepseq` Clock.getCurrentTime
                 let prepStartDiff = Clock.diffUTCTime prepTime startTime
                 putStrLn $ "Loading dependencies took " ++ show prepStartDiff
-                CLaSH.Driver.generateHDL bindingsMap (Just backend') primMap tcm
+                CLaSH.Driver.generateHDL clean bindingsMap (Just backend') primMap tcm
                   tupTcm (ghcTypeToHWType iw fp) reduceConstant topEnt testInpM expOutM opts' (startTime,prepTime)
 
 makeVHDL :: IORef CLaSHOpts -> [FilePath] -> InputT GHCi ()

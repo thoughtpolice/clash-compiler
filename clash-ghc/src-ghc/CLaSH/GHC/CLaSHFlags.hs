@@ -50,6 +50,7 @@ flagsClash r = [
   , defFlag "clash-allow-zero-width" (NoArg (liftEwM (setAllowZeroWidth r)))
   , defFlag "clash-allow-invalid-coercions" (NoArg (liftEwM (setAllowInvalidCoercions r)))
   , defFlag "clash-disable-lambdadrop" (NoArg (liftEwM (setDisableLambdaDrop r)))
+  , defFlag "clash-disable-graphclean" (NoArg (liftEwM (setDisableGraphCleanup r)))
   ]
 
 setInlineLimit :: IORef CLaSHOpts
@@ -113,3 +114,6 @@ setAllowInvalidCoercions r = modifyIORef r (\c -> c {opt_errorInvalidCoercions =
 
 setDisableLambdaDrop :: IORef CLaSHOpts -> IO ()
 setDisableLambdaDrop r = modifyIORef r (\c -> c { opt_enableLambdaDrop = False})
+
+setDisableGraphCleanup :: IORef CLaSHOpts -> IO ()
+setDisableGraphCleanup r = modifyIORef r (\c -> c { opt_enableGraphCleanup = False})
