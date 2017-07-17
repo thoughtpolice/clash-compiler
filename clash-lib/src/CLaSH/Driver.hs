@@ -51,7 +51,8 @@ import           CLaSH.Util                       (first, second)
 
 -- | Create a set of target HDL files for a set of functions
 generateHDL :: forall backend . Backend backend
-            => BindingMap -- ^ Set of functions
+            => Bool
+            -> BindingMap -- ^ Set of functions
             -> Maybe backend
             -> PrimMap (Text.Text) -- ^ Primitive / BlackBox Definitions
             -> HashMap TyConName TyCon -- ^ TyCon cache
@@ -64,7 +65,7 @@ generateHDL :: forall backend . Backend backend
             -> CLaSHOpts -- ^ Debug information level for the normalization process
             -> (Clock.UTCTime,Clock.UTCTime)
             -> IO ()
-generateHDL bindingsMap hdlState primMap tcm tupTcm typeTrans eval (topEntity,annM) testInpM expOutM opts (startTime,prepTime) = do
+generateHDL doCleanup bindingsMap hdlState primMap tcm tupTcm typeTrans eval (topEntity,annM) testInpM expOutM opts (startTime,prepTime) = do
   let primMap' = (HM.map parsePrimitive :: PrimMap Text.Text -> PrimMap BlackBoxTemplate) primMap
 
   (supplyN,supplyTB) <- Supply.splitSupply
@@ -72,9 +73,11 @@ generateHDL bindingsMap hdlState primMap tcm tupTcm typeTrans eval (topEntity,an
                       . Supply.freshId
                      <$> Supply.newSupply
 
-  let doNorm     = do norm <- normalize [topEntity]
-                      let normChecked = checkNonRecursive topEntity norm
-                      cleanupGraph topEntity normChecked
+  let doNorm | not doCleanup = normalize [topEntity]
+             | otherwise = do
+                 norm <- normalize [topEntity]
+                 let normChecked = checkNonRecursive topEntity norm
+                 cleanupGraph topEntity normChecked
       cg         = callGraph bindingsMap topEntity
       rcs        = concat $ mkRecursiveComponents cg
       rcsMap     = HML.fromList

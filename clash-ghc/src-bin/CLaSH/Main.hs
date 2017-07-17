@@ -145,6 +145,7 @@ defaultMain = flip withArgs $ do
                              , opt_floatSupport = False
                              , opt_allowZero   = False
                              , opt_enableLambdaDrop = True
+                             , opt_enableGraphCleanup = True
                              , opt_importPaths = []
                              , opt_errorInvalidCoercions = True
                              })
