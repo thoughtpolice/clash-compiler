@@ -88,6 +88,7 @@ runNormalization opts supply globals typeTrans tcm tupTcm eval primMap rcsMap
                   tupTcm
                   eval
                   (opt_allowZero opts)
+                  (opt_enableBindConstantVar opts)
 
     rwState   = RewriteState
                   0

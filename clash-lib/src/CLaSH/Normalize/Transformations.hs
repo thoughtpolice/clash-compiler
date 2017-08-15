@@ -442,8 +442,12 @@ removeUnusedExpr _ e = return e
 -- | Inline let-bindings when the RHS is either a local variable reference or
 -- is constant
 bindConstantVar :: NormRewrite
-bindConstantVar = inlineBinders test
+bindConstantVar cc tm = do
+  shouldInline <- Lens.view shouldBindConstantVars
+  let action = if shouldInline then test else none
+  inlineBinders action cc tm
   where
+    none _ _ = pure False
     test _ (_,Embed e) = (||) <$> isLocalVar e <*> pure (isConstant e)
 
 -- | Inline nullary/closed functions
