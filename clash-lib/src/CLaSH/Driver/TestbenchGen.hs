@@ -61,7 +61,7 @@ genTestBench :: CLaSHOpts
              -> [(String,FilePath)]          -- ^ Set of collected data-files
              -> Component                    -- ^ Component to generate TB for
              -> IO ([(SrcSpan,Component)],[(String,FilePath)])
-genTestBench opts supply primMap typeTrans tcm tupTcm eval mkId seen globals stimuliNmM expectedNmM modName dfiles
+genTestBench opts supply primMap typeTrans tcm tupTcm eval mkId seen globals stimuliNmM@(Just _) expectedNmM@(Just _) modName dfiles
   c@(Component cName hidden inps [outp] _) = do
   let inpM    = listToMaybe inps
       iw      = opt_intWidth opts
