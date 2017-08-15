@@ -39,6 +39,7 @@ data CLaSHOpts = CLaSHOpts { opt_inlineLimit :: Int
                            , opt_allowZero   :: Bool
                            , opt_enableLambdaDrop :: Bool
                            , opt_enableGraphCleanup :: Bool
+                           , opt_enableBindConstantVar :: Bool
                            , opt_importPaths :: [FilePath]
                            , opt_errorInvalidCoercions :: Bool
                            }

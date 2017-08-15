@@ -95,6 +95,8 @@ data RewriteEnv
   -- ^ Hardcoded evaluator (delta-reduction)}
   , _allowZero      :: Bool
   -- ^ Zero bit wide things are representable
+  , _shouldBindConstantVars :: Bool
+  -- ^ Whether or not to run the @'bindConstantVar'@ pass.
   }
 
 makeLenses ''RewriteEnv
