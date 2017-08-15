@@ -6,8 +6,6 @@
   Turn CoreHW terms into normalized CoreHW Terms
 -}
 
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 module CLaSH.Normalize where
@@ -15,7 +13,6 @@ module CLaSH.Normalize where
 import           Control.Concurrent.Supply        (Supply)
 import           Control.Lens                     ((.=),(^.),_1,_3)
 import qualified Control.Lens                     as Lens
-import           Control.Monad                    (when)
 import           Data.Either                      (partitionEithers)
 import           Data.HashMap.Strict              (HashMap)
 import qualified Data.HashMap.Strict              as HashMap
@@ -100,7 +97,6 @@ runNormalization opts supply globals typeTrans tcm tupTcm eval primMap rcsMap
 
     normState = NormalizeState
                   HashMap.empty
-                  Set.empty
                   Map.empty
                   HashMap.empty
                   (opt_specLimit opts)
@@ -110,104 +106,14 @@ runNormalization opts supply globals typeTrans tcm tupTcm eval primMap rcsMap
                   primMap
                   rcsMap
 
-{--
+
 normalize :: [TmName]
           -> NormalizeSession (HashMap TmName (Type,SrcSpan,Term))
 normalize []  = return HashMap.empty
 normalize top = do
-  (new,topNormalized) <- unzip <$> mapM normalize2' top
-  newNormalized <- normalize (Set.toList $ Set.unions new)
+  (new,topNormalized) <- unzip <$> mapM normalize' top
+  newNormalized <- normalize (concat new)
   return (HashMap.union (HashMap.fromList topNormalized) newNormalized)
---}
-
-normalize :: [TmName]
-          -> NormalizeSession (HashMap TmName (Type,SrcSpan,Term))
-normalize ts = go ts Set.empty []
-  where
-    go [] news acc =
-      case Set.toList news of
-        [] -> return $ HashMap.fromList acc
-        vs -> go vs Set.empty acc
-
-    go (x:xs) news acc = do
-      (new, topNorm) <- normalize2' x
-      go xs (new `Set.union` news) (topNorm:acc)
-
-normalize2' :: TmName
-            -> NormalizeSession _
-normalize2' nm = fmap (HashMap.lookup nm) (Lens.use bindings) >>= \case
-  Nothing -> error $ $(curLoc) ++ "Expr belonging to bndr: " ++ showDoc nm ++ " not found"
-  Just (ty, sp, tm) ->
-    hasTranslatableType ty >>= \case
-      -- found, but the type cannot be properly translated, so simply find
-      -- any other bindings, report an error, and leave
-      False -> do
-        prevNorm <- getNormalizedBndrs
-        let toNormalize = Set.difference (getUsedBndrs tm) (Set.insert nm prevNorm)
-        traceNonTranslatableTy nm ty tm
-          (return (toNormalize,(nm,(ty,sp,tm))))
-
-      -- the type allows proper translation, so do the business
-      True -> do
-        tcm <- Lens.view tcCache
-        (tyN,spN,tmN) <- cacheNormalized nm $ do
-          curFun .= (nm,sp)
-          tm' <- rewriteExpr ("normalization", normalization) (showDoc nm, tm)
-          ty' <- termType tcm tm'
-          return (ty',sp,tm')
-
-        let usedBndrs = getUsedBndrs tmN
-        when (nm `elem` usedBndrs) (traceBndrStillRecursive nm tyN tmN)
-
-        prevNorm <- getNormalizedBndrs
-        let toNormalize = Set.difference (getUsedBndrs tm) (Set.insert nm prevNorm)
-        return (toNormalize,(nm,(tyN,spN,tmN)))
-
-cacheNormalized :: TmName
-                -> NormalizeSession (Type, SrcSpan, Term)
-                -> NormalizeSession (Type, SrcSpan, Term)
-cacheNormalized key create = do
-  cache <- Lens.use (extra.normalized)
-  case HashMap.lookup key cache of
-    Just value -> return value
-    Nothing -> do
-      value <- create
-      (extra.normalized)    Lens.%= HashMap.insert key value
-      (extra.normalizedNms) Lens.%= Set.insert key
-      return value
-
-traceBndrStillRecursive :: TmName -> Type -> Term -> NormalizeSession ()
-traceBndrStillRecursive nm ty tm = do
-  traceIf True
-    (concat [ $(curLoc),"Expr belonging to bndr: ", showDoc nm, " (:: "
-            , showDoc ty
-            , ") remains recursive after normalization:\n"
-            , showDoc tm
-            ])
-    (return ())
-
-traceNonTranslatableTy :: TmName -> Type -> Term -> NormalizeSession a -> NormalizeSession a
-traceNonTranslatableTy nm ty tm act = do
-  lvl <- Lens.view dbgLevel
-  traceIf (lvl >= DebugFinal)
-          (concat [ $(curLoc), "Expr belonging to bndr: ", showDoc nm, " (:: "
-                  , showDoc ty
-                  , ") has a non-representable return type."
-                  , " Not normalising:\n", showDoc tm
-                  ] )
-          act
-
-getUsedBndrs :: Term -> Set.Set TmName
-getUsedBndrs tm = Lens.setOf termFreeIds tm
-
-getNormalizedBndrs :: NormalizeSession (Set.Set TmName)
-getNormalizedBndrs = Lens.use (extra.normalizedNms)
-
-hasTranslatableType :: Type -> NormalizeSession Bool
-hasTranslatableType ty = do
-  tcm <- Lens.view tcCache
-  let (_, resTy) = splitCoreFunForallTy tcm ty
-  fmap not (isUntranslatableType resTy)
 
 normalize' :: TmName
            -> NormalizeSession ([TmName],(TmName,(Type,SrcSpan,Term)))

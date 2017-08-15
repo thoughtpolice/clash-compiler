@@ -13,7 +13,6 @@ module CLaSH.Normalize.Types where
 import Control.Monad.State.Strict (State)
 import Data.HashMap.Strict (HashMap)
 import Data.Map            (Map)
-import Data.Set            (Set)
 
 import SrcLoc (SrcSpan)
 
@@ -29,9 +28,6 @@ data NormalizeState
   = NormalizeState
   { _normalized          :: HashMap TmName (Type,SrcSpan,Term)
   -- ^ Global binders
-  , _normalizedNms       :: Set TmName
-  -- ^ A set of names, maintained independently from @'_normalized'@ to
-  -- avoid @O(n)@ conversion penalties.
   , _specialisationCache :: Map (TmName,Int,Either Term Type) (TmName,Type)
   -- ^ Cache of previously specialised functions:
   --
